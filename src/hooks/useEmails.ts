@@ -40,7 +40,14 @@ export const useEmails = (temporaryEmailId?: string) => {
         .order('received_at', { ascending: false });
 
       if (error) throw error;
-      setEmails(data || []);
+      
+      // Type cast the data to match our Email interface
+      const typedEmails: Email[] = (data || []).map(email => ({
+        ...email,
+        email_type: email.email_type as 'received' | 'sent'
+      }));
+      
+      setEmails(typedEmails);
     } catch (error) {
       console.error('Error fetching emails:', error);
     } finally {
