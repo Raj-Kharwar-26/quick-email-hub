@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { Json } from '@/integrations/supabase/types';
@@ -28,6 +28,7 @@ export const useEmails = (temporaryEmailId?: string) => {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const subscriptionRef = useRef<any>(null);
 
   const fetchEmails = async () => {
     if (!user || !temporaryEmailId) return;
@@ -128,8 +129,15 @@ export const useEmails = (temporaryEmailId?: string) => {
     if (temporaryEmailId && user) {
       fetchEmails();
 
-      // Create a unique channel name to avoid conflicts
-      const channelName = `emails_changes_${temporaryEmailId}`;
+      // Clean up any existing subscription first
+      if (subscriptionRef.current) {
+        console.log('Cleaning up existing subscription');
+        supabase.removeChannel(subscriptionRef.current);
+        subscriptionRef.current = null;
+      }
+
+      // Create a unique channel name with timestamp to avoid conflicts
+      const channelName = `emails_${temporaryEmailId}_${Date.now()}`;
       
       // Set up real-time subscription
       const subscription = supabase
@@ -139,15 +147,20 @@ export const useEmails = (temporaryEmailId?: string) => {
           schema: 'public',
           table: 'emails',
           filter: `temporary_email_id=eq.${temporaryEmailId}`
-        }, () => {
-          console.log('Email change detected, refetching...');
+        }, (payload) => {
+          console.log('Email change detected:', payload);
           fetchEmails();
         })
         .subscribe();
 
+      subscriptionRef.current = subscription;
+
       return () => {
         console.log('Cleaning up email subscription');
-        supabase.removeChannel(subscription);
+        if (subscriptionRef.current) {
+          supabase.removeChannel(subscriptionRef.current);
+          subscriptionRef.current = null;
+        }
       };
     }
   }, [temporaryEmailId, user]);
