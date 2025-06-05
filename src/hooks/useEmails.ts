@@ -1,8 +1,7 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
-import { Json } from '@/integrations/supabase/types';
 
 export interface Email {
   id: string;
@@ -21,21 +20,16 @@ export interface Email {
   is_sent: boolean;
   email_type: 'received' | 'sent';
   spam_score?: number;
-  headers?: Json;
+  headers?: any;
 }
 
 export const useEmails = (temporaryEmailId?: string) => {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const channelRef = useRef<any>(null);
-  const mountedRef = useRef(true);
 
   const fetchEmails = async () => {
-    if (!user || !temporaryEmailId || !mountedRef.current) {
-      setLoading(false);
-      return;
-    }
+    if (!user || !temporaryEmailId) return;
     
     try {
       const { data, error } = await supabase
@@ -45,23 +39,11 @@ export const useEmails = (temporaryEmailId?: string) => {
         .order('received_at', { ascending: false });
 
       if (error) throw error;
-      
-      // Type cast the data to match our Email interface
-      const typedEmails: Email[] = (data || []).map(email => ({
-        ...email,
-        email_type: (email.email_type === 'sent' ? 'sent' : 'received') as 'received' | 'sent',
-        attachments: Array.isArray(email.attachments) ? email.attachments : []
-      }));
-      
-      if (mountedRef.current) {
-        setEmails(typedEmails);
-      }
+      setEmails(data || []);
     } catch (error) {
       console.error('Error fetching emails:', error);
     } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
@@ -134,78 +116,26 @@ export const useEmails = (temporaryEmailId?: string) => {
   };
 
   useEffect(() => {
-    mountedRef.current = true;
-    console.log('useEmails effect running for temporaryEmailId:', temporaryEmailId);
-    
-    // Cleanup any existing subscription with proper async handling
-    const cleanupChannel = async () => {
-      if (channelRef.current) {
-        console.log('Cleaning up existing subscription');
-        try {
-          await supabase.removeChannel(channelRef.current);
-        } catch (error) {
-          console.log('Error removing channel:', error);
-        }
-        channelRef.current = null;
-      }
-    };
+    if (temporaryEmailId) {
+      fetchEmails();
 
-    // Early return if no data needed
-    if (!temporaryEmailId || !user) {
-      console.log('No temporaryEmailId or user, setting loading to false');
-      setLoading(false);
-      cleanupChannel();
-      return;
-    }
-
-    // Setup subscription
-    const setupSubscription = async () => {
-      await cleanupChannel();
-      
-      // Fetch initial emails
-      await fetchEmails();
-
-      if (!mountedRef.current) return;
-
-      // Create a unique channel name
-      const channelName = `emails_${temporaryEmailId}_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-      
-      console.log('Creating new channel:', channelName);
-      
-      // Create and configure the channel
-      const channel = supabase.channel(channelName);
-      channelRef.current = channel;
-      
-      // Configure the channel and subscribe
-      channel
+      // Set up real-time subscription
+      const subscription = supabase
+        .channel('emails_changes')
         .on('postgres_changes', {
           event: '*',
           schema: 'public',
           table: 'emails',
           filter: `temporary_email_id=eq.${temporaryEmailId}`
-        }, (payload) => {
-          console.log('Email change detected:', payload);
-          // Only refetch if component is still mounted and this is still the active channel
-          if (mountedRef.current && channelRef.current === channel) {
-            fetchEmails();
-          }
+        }, () => {
+          fetchEmails();
         })
-        .subscribe((status) => {
-          console.log('Channel subscription status:', status, 'for channel:', channelName);
-        });
-    };
+        .subscribe();
 
-    setupSubscription();
-
-    // Cleanup function
-    return () => {
-      console.log('Cleaning up useEmails subscription');
-      mountedRef.current = false;
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, [temporaryEmailId, user]);
 
   return {
