@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Refresh, Mail, Copy, Settings, Plus } from 'lucide-react';
+import { RefreshCw, Mail, Copy, Settings, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -110,7 +109,7 @@ export const EmailGenerator: React.FC<EmailGeneratorProps> = ({ onEmailGenerated
             onClick={() => setIsCustomMode(false)}
             size="sm"
           >
-            <Refresh className="h-4 w-4 mr-2" />
+            <RefreshCw className="h-4 w-4 mr-2" />
             Random
           </Button>
           <Button

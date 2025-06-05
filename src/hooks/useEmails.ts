@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { Json } from '@/integrations/supabase/types';
 
 export interface Email {
   id: string;
@@ -14,13 +15,13 @@ export interface Email {
   subject?: string;
   body_text?: string;
   body_html?: string;
-  attachments?: any[];
+  attachments?: Json;
   received_at: string;
   is_read: boolean;
   is_sent: boolean;
   email_type: 'received' | 'sent';
   spam_score?: number;
-  headers?: any;
+  headers?: Json;
 }
 
 export const useEmails = (temporaryEmailId?: string) => {

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Mail, Trash2, MoreVertical, RefreshCw, Eye, Clock, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -63,6 +62,18 @@ export const EmailInbox: React.FC<EmailInboxProps> = ({ currentEmail }) => {
   };
 
   const unreadCount = emails.filter(email => !email.is_read).length;
+
+  // Helper function to safely parse attachments
+  const getAttachments = (email: Email) => {
+    if (!email.attachments) return [];
+    if (Array.isArray(email.attachments)) return email.attachments;
+    try {
+      const parsed = typeof email.attachments === 'string' ? JSON.parse(email.attachments) : email.attachments;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
 
   if (loading) {
     return (
@@ -217,19 +228,22 @@ export const EmailInbox: React.FC<EmailInboxProps> = ({ currentEmail }) => {
                   )}
                 </div>
                 
-                {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
-                  <div className="mt-6 pt-6 border-t">
-                    <h4 className="font-medium mb-2">Attachments</h4>
-                    <div className="space-y-2">
-                      {selectedEmail.attachments.map((attachment: any, index: number) => (
-                        <div key={index} className="flex items-center space-x-2 p-2 bg-gray-50 rounded">
-                          <Mail className="h-4 w-4 text-gray-400" />
-                          <span className="text-sm">{attachment.filename}</span>
-                        </div>
-                      ))}
+                {(() => {
+                  const attachments = getAttachments(selectedEmail);
+                  return attachments.length > 0 && (
+                    <div className="mt-6 pt-6 border-t">
+                      <h4 className="font-medium mb-2">Attachments</h4>
+                      <div className="space-y-2">
+                        {attachments.map((attachment: any, index: number) => (
+                          <div key={index} className="flex items-center space-x-2 p-2 bg-gray-50 rounded">
+                            <Mail className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm">{attachment.filename || `Attachment ${index + 1}`}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </CardContent>
             </Card>
           ) : (
