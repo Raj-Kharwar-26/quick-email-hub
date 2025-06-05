@@ -28,11 +28,14 @@ export const useEmails = (temporaryEmailId?: string) => {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const subscriptionRef = useRef<any>(null);
-  const isSubscribingRef = useRef(false);
+  const channelRef = useRef<any>(null);
+  const currentEmailIdRef = useRef<string | undefined>(undefined);
 
   const fetchEmails = async () => {
-    if (!user || !temporaryEmailId) return;
+    if (!user || !temporaryEmailId) {
+      setLoading(false);
+      return;
+    }
     
     try {
       const { data, error } = await supabase
@@ -127,40 +130,45 @@ export const useEmails = (temporaryEmailId?: string) => {
   };
 
   useEffect(() => {
-    // Cleanup function to remove subscription
-    const cleanupSubscription = async () => {
-      if (subscriptionRef.current) {
-        console.log('Cleaning up existing subscription');
-        await supabase.removeChannel(subscriptionRef.current);
-        subscriptionRef.current = null;
+    // Cleanup function to remove existing subscription
+    const cleanup = async () => {
+      if (channelRef.current) {
+        console.log('Cleaning up existing channel');
+        try {
+          await supabase.removeChannel(channelRef.current);
+        } catch (error) {
+          console.error('Error removing channel:', error);
+        }
+        channelRef.current = null;
       }
-      isSubscribingRef.current = false;
     };
 
-    // Setup subscription function
+    // Setup new subscription
     const setupSubscription = async () => {
-      // Prevent multiple subscription attempts
-      if (isSubscribingRef.current) {
-        console.log('Already subscribing, skipping...');
+      // Only proceed if we have all required data and it's different from current
+      if (!temporaryEmailId || !user || temporaryEmailId === currentEmailIdRef.current) {
+        if (!temporaryEmailId || !user) {
+          setLoading(false);
+        }
         return;
       }
 
-      if (!temporaryEmailId || !user) {
-        return;
-      }
-
-      isSubscribingRef.current = true;
+      console.log('Setting up subscription for email ID:', temporaryEmailId);
+      
+      // Update the current email ID reference
+      currentEmailIdRef.current = temporaryEmailId;
 
       try {
+        // Fetch initial emails
         await fetchEmails();
 
-        // Create a unique channel name
-        const channelName = `emails_${temporaryEmailId}_${Math.random().toString(36).substr(2, 9)}`;
+        // Create a unique channel name to avoid conflicts
+        const channelName = `emails-${temporaryEmailId}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         
-        console.log('Creating new subscription with channel:', channelName);
+        console.log('Creating channel:', channelName);
         
-        // Set up real-time subscription
-        const subscription = supabase
+        // Create new channel
+        const channel = supabase
           .channel(channelName)
           .on('postgres_changes', {
             event: '*',
@@ -172,27 +180,23 @@ export const useEmails = (temporaryEmailId?: string) => {
             fetchEmails();
           })
           .subscribe((status) => {
-            console.log('Subscription status:', status);
-            if (status === 'SUBSCRIBED') {
-              console.log('Successfully subscribed to email updates');
-            }
+            console.log('Channel subscription status:', status);
           });
 
-        subscriptionRef.current = subscription;
+        channelRef.current = channel;
       } catch (error) {
-        console.error('Error setting up subscription:', error);
-        isSubscribingRef.current = false;
+        console.error('Error setting up email subscription:', error);
+        setLoading(false);
       }
     };
 
-    // Clean up any existing subscription first, then setup new one
-    cleanupSubscription().then(() => {
-      setupSubscription();
-    });
+    // Run cleanup then setup
+    cleanup().then(setupSubscription);
 
-    // Return cleanup function
+    // Cleanup on unmount or dependency change
     return () => {
-      cleanupSubscription();
+      cleanup();
+      currentEmailIdRef.current = undefined;
     };
   }, [temporaryEmailId, user]);
 
