@@ -1,4 +1,5 @@
 
+
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
@@ -126,15 +127,20 @@ export const useEmails = (temporaryEmailId?: string) => {
   };
 
   useEffect(() => {
-    if (temporaryEmailId && user) {
-      fetchEmails();
-
-      // Clean up any existing subscription first
+    // Cleanup function to remove subscription
+    const cleanupSubscription = () => {
       if (subscriptionRef.current) {
         console.log('Cleaning up existing subscription');
         supabase.removeChannel(subscriptionRef.current);
         subscriptionRef.current = null;
       }
+    };
+
+    // Clean up any existing subscription first
+    cleanupSubscription();
+
+    if (temporaryEmailId && user) {
+      fetchEmails();
 
       // Create a unique channel name with timestamp to avoid conflicts
       const channelName = `emails_${temporaryEmailId}_${Date.now()}`;
@@ -154,15 +160,12 @@ export const useEmails = (temporaryEmailId?: string) => {
         .subscribe();
 
       subscriptionRef.current = subscription;
-
-      return () => {
-        console.log('Cleaning up email subscription');
-        if (subscriptionRef.current) {
-          supabase.removeChannel(subscriptionRef.current);
-          subscriptionRef.current = null;
-        }
-      };
     }
+
+    // Return cleanup function
+    return () => {
+      cleanupSubscription();
+    };
   }, [temporaryEmailId, user]);
 
   return {
@@ -174,3 +177,4 @@ export const useEmails = (temporaryEmailId?: string) => {
     refetch: fetchEmails
   };
 };
+
