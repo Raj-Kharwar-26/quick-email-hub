@@ -15,7 +15,7 @@ export interface Email {
   subject?: string;
   body_text?: string;
   body_html?: string;
-  attachments?: Json;
+  attachments?: any[];
   received_at: string;
   is_read: boolean;
   is_sent: boolean;
@@ -44,7 +44,8 @@ export const useEmails = (temporaryEmailId?: string) => {
       // Type cast the data to match our Email interface
       const typedEmails: Email[] = (data || []).map(email => ({
         ...email,
-        email_type: email.email_type as 'received' | 'sent'
+        email_type: email.email_type as 'received' | 'sent',
+        attachments: Array.isArray(email.attachments) ? email.attachments : []
       }));
       
       setEmails(typedEmails);
@@ -124,24 +125,29 @@ export const useEmails = (temporaryEmailId?: string) => {
   };
 
   useEffect(() => {
-    if (temporaryEmailId) {
+    if (temporaryEmailId && user) {
       fetchEmails();
 
+      // Create a unique channel name to avoid conflicts
+      const channelName = `emails_changes_${temporaryEmailId}`;
+      
       // Set up real-time subscription
       const subscription = supabase
-        .channel('emails_changes')
+        .channel(channelName)
         .on('postgres_changes', {
           event: '*',
           schema: 'public',
           table: 'emails',
           filter: `temporary_email_id=eq.${temporaryEmailId}`
         }, () => {
+          console.log('Email change detected, refetching...');
           fetchEmails();
         })
         .subscribe();
 
       return () => {
-        subscription.unsubscribe();
+        console.log('Cleaning up email subscription');
+        supabase.removeChannel(subscription);
       };
     }
   }, [temporaryEmailId, user]);
