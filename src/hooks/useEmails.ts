@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
@@ -27,7 +28,8 @@ export const useEmails = (temporaryEmailId?: string) => {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const subscriptionRef = useRef<{ channel: any; isSubscribed: boolean } | null>(null);
+  const channelRef = useRef<any>(null);
+  const isSubscribedRef = useRef(false);
 
   const fetchEmails = async () => {
     if (!user || !temporaryEmailId) {
@@ -130,13 +132,12 @@ export const useEmails = (temporaryEmailId?: string) => {
   useEffect(() => {
     console.log('useEmails effect running for temporaryEmailId:', temporaryEmailId);
     
-    // Clean up any existing subscription immediately
-    if (subscriptionRef.current) {
+    // Cleanup any existing subscription
+    if (channelRef.current && isSubscribedRef.current) {
       console.log('Cleaning up existing subscription');
-      if (subscriptionRef.current.channel) {
-        supabase.removeChannel(subscriptionRef.current.channel);
-      }
-      subscriptionRef.current = null;
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+      isSubscribedRef.current = false;
     }
 
     // Early return if no data needed
@@ -149,46 +150,48 @@ export const useEmails = (temporaryEmailId?: string) => {
     // Fetch initial emails
     fetchEmails();
 
-    // Create a new subscription with a unique identifier
-    const timestamp = Date.now();
-    const randomId = Math.random().toString(36).substring(2, 15);
-    const channelName = `emails_${temporaryEmailId}_${timestamp}_${randomId}`;
+    // Create a unique channel name to avoid conflicts
+    const channelName = `emails_${temporaryEmailId}_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
     
     console.log('Creating new channel:', channelName);
     
-    // Create the channel but don't subscribe yet
+    // Create and configure the channel
     const channel = supabase.channel(channelName);
+    channelRef.current = channel;
     
-    // Set up the subscription object
-    subscriptionRef.current = { channel, isSubscribed: false };
-    
-    // Configure the channel
-    channel
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'emails',
-        filter: `temporary_email_id=eq.${temporaryEmailId}`
-      }, (payload) => {
-        console.log('Email change detected:', payload);
-        // Only refetch if this subscription is still active
-        if (subscriptionRef.current?.channel === channel) {
-          fetchEmails();
-        }
-      })
-      .subscribe((status) => {
+    // Configure the channel before subscribing
+    channel.on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'emails',
+      filter: `temporary_email_id=eq.${temporaryEmailId}`
+    }, (payload) => {
+      console.log('Email change detected:', payload);
+      // Only refetch if this is still the active channel
+      if (channelRef.current === channel && isSubscribedRef.current) {
+        fetchEmails();
+      }
+    });
+
+    // Subscribe only if not already subscribed
+    if (!isSubscribedRef.current) {
+      channel.subscribe((status) => {
         console.log('Channel subscription status:', status, 'for channel:', channelName);
-        if (subscriptionRef.current?.channel === channel) {
-          subscriptionRef.current.isSubscribed = status === 'SUBSCRIBED';
+        if (status === 'SUBSCRIBED') {
+          isSubscribedRef.current = true;
+        } else if (status === 'CLOSED') {
+          isSubscribedRef.current = false;
         }
       });
+    }
 
     // Cleanup function
     return () => {
       console.log('Cleaning up useEmails subscription');
-      if (subscriptionRef.current?.channel === channel) {
-        supabase.removeChannel(channel);
-        subscriptionRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+        isSubscribedRef.current = false;
       }
     };
   }, [temporaryEmailId, user]);
