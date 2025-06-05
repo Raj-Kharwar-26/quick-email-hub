@@ -29,7 +29,7 @@ export const useEmails = (temporaryEmailId?: string) => {
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const channelRef = useRef<any>(null);
-  const currentEmailIdRef = useRef<string | undefined>(undefined);
+  const isActiveRef = useRef(false);
 
   const fetchEmails = async () => {
     if (!user || !temporaryEmailId) {
@@ -130,73 +130,62 @@ export const useEmails = (temporaryEmailId?: string) => {
   };
 
   useEffect(() => {
-    // Cleanup function to remove existing subscription
-    const cleanup = async () => {
-      if (channelRef.current) {
-        console.log('Cleaning up existing channel');
-        try {
-          await supabase.removeChannel(channelRef.current);
-        } catch (error) {
-          console.error('Error removing channel:', error);
+    // Mark this effect as active
+    isActiveRef.current = true;
+    
+    // Synchronous cleanup of existing channel
+    if (channelRef.current) {
+      console.log('Removing existing channel');
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // Only proceed if we have required data and this effect is still active
+    if (!temporaryEmailId || !user || !isActiveRef.current) {
+      setLoading(false);
+      return;
+    }
+
+    console.log('Setting up new subscription for email ID:', temporaryEmailId);
+
+    // Fetch initial emails
+    fetchEmails();
+
+    // Create channel with timestamp for uniqueness
+    const timestamp = Date.now();
+    const channelName = `emails-${temporaryEmailId}-${timestamp}`;
+    
+    console.log('Creating channel:', channelName);
+    
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'emails',
+        filter: `temporary_email_id=eq.${temporaryEmailId}`
+      }, (payload) => {
+        console.log('Email change detected:', payload);
+        // Only fetch if this effect is still active
+        if (isActiveRef.current) {
+          fetchEmails();
         }
+      })
+      .subscribe((status) => {
+        console.log('Channel subscription status:', status);
+      });
+
+    channelRef.current = channel;
+
+    // Cleanup function
+    return () => {
+      console.log('Cleaning up useEmails effect');
+      isActiveRef.current = false;
+      
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
-    };
-
-    // Setup new subscription
-    const setupSubscription = async () => {
-      // Only proceed if we have all required data and it's different from current
-      if (!temporaryEmailId || !user || temporaryEmailId === currentEmailIdRef.current) {
-        if (!temporaryEmailId || !user) {
-          setLoading(false);
-        }
-        return;
-      }
-
-      console.log('Setting up subscription for email ID:', temporaryEmailId);
-      
-      // Update the current email ID reference
-      currentEmailIdRef.current = temporaryEmailId;
-
-      try {
-        // Fetch initial emails
-        await fetchEmails();
-
-        // Create a unique channel name to avoid conflicts
-        const channelName = `emails-${temporaryEmailId}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-        
-        console.log('Creating channel:', channelName);
-        
-        // Create new channel
-        const channel = supabase
-          .channel(channelName)
-          .on('postgres_changes', {
-            event: '*',
-            schema: 'public',
-            table: 'emails',
-            filter: `temporary_email_id=eq.${temporaryEmailId}`
-          }, (payload) => {
-            console.log('Email change detected:', payload);
-            fetchEmails();
-          })
-          .subscribe((status) => {
-            console.log('Channel subscription status:', status);
-          });
-
-        channelRef.current = channel;
-      } catch (error) {
-        console.error('Error setting up email subscription:', error);
-        setLoading(false);
-      }
-    };
-
-    // Run cleanup then setup
-    cleanup().then(setupSubscription);
-
-    // Cleanup on unmount or dependency change
-    return () => {
-      cleanup();
-      currentEmailIdRef.current = undefined;
     };
   }, [temporaryEmailId, user]);
 
