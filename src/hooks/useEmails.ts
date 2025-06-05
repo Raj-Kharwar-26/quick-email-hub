@@ -1,5 +1,4 @@
 
-
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
@@ -30,6 +29,7 @@ export const useEmails = (temporaryEmailId?: string) => {
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const subscriptionRef = useRef<any>(null);
+  const isSubscribingRef = useRef(false);
 
   const fetchEmails = async () => {
     if (!user || !temporaryEmailId) return;
@@ -128,39 +128,67 @@ export const useEmails = (temporaryEmailId?: string) => {
 
   useEffect(() => {
     // Cleanup function to remove subscription
-    const cleanupSubscription = () => {
+    const cleanupSubscription = async () => {
       if (subscriptionRef.current) {
         console.log('Cleaning up existing subscription');
-        supabase.removeChannel(subscriptionRef.current);
+        await supabase.removeChannel(subscriptionRef.current);
         subscriptionRef.current = null;
+      }
+      isSubscribingRef.current = false;
+    };
+
+    // Setup subscription function
+    const setupSubscription = async () => {
+      // Prevent multiple subscription attempts
+      if (isSubscribingRef.current) {
+        console.log('Already subscribing, skipping...');
+        return;
+      }
+
+      if (!temporaryEmailId || !user) {
+        return;
+      }
+
+      isSubscribingRef.current = true;
+
+      try {
+        await fetchEmails();
+
+        // Create a unique channel name
+        const channelName = `emails_${temporaryEmailId}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        console.log('Creating new subscription with channel:', channelName);
+        
+        // Set up real-time subscription
+        const subscription = supabase
+          .channel(channelName)
+          .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'emails',
+            filter: `temporary_email_id=eq.${temporaryEmailId}`
+          }, (payload) => {
+            console.log('Email change detected:', payload);
+            fetchEmails();
+          })
+          .subscribe((status) => {
+            console.log('Subscription status:', status);
+            if (status === 'SUBSCRIBED') {
+              console.log('Successfully subscribed to email updates');
+            }
+          });
+
+        subscriptionRef.current = subscription;
+      } catch (error) {
+        console.error('Error setting up subscription:', error);
+        isSubscribingRef.current = false;
       }
     };
 
-    // Clean up any existing subscription first
-    cleanupSubscription();
-
-    if (temporaryEmailId && user) {
-      fetchEmails();
-
-      // Create a unique channel name with timestamp to avoid conflicts
-      const channelName = `emails_${temporaryEmailId}_${Date.now()}`;
-      
-      // Set up real-time subscription
-      const subscription = supabase
-        .channel(channelName)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'emails',
-          filter: `temporary_email_id=eq.${temporaryEmailId}`
-        }, (payload) => {
-          console.log('Email change detected:', payload);
-          fetchEmails();
-        })
-        .subscribe();
-
-      subscriptionRef.current = subscription;
-    }
+    // Clean up any existing subscription first, then setup new one
+    cleanupSubscription().then(() => {
+      setupSubscription();
+    });
 
     // Return cleanup function
     return () => {
@@ -177,4 +205,3 @@ export const useEmails = (temporaryEmailId?: string) => {
     refetch: fetchEmails
   };
 };
-
