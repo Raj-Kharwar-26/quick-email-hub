@@ -28,8 +28,7 @@ export const useEmails = (temporaryEmailId?: string) => {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const channelRef = useRef<any>(null);
-  const isActiveRef = useRef(false);
+  const subscriptionRef = useRef<{ channel: any; isSubscribed: boolean } | null>(null);
 
   const fetchEmails = async () => {
     if (!user || !temporaryEmailId) {
@@ -130,35 +129,42 @@ export const useEmails = (temporaryEmailId?: string) => {
   };
 
   useEffect(() => {
-    // Mark this effect as active
-    isActiveRef.current = true;
+    console.log('useEmails effect running for temporaryEmailId:', temporaryEmailId);
     
-    // Synchronous cleanup of existing channel
-    if (channelRef.current) {
-      console.log('Removing existing channel');
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+    // Clean up any existing subscription immediately
+    if (subscriptionRef.current) {
+      console.log('Cleaning up existing subscription');
+      if (subscriptionRef.current.channel) {
+        supabase.removeChannel(subscriptionRef.current.channel);
+      }
+      subscriptionRef.current = null;
     }
 
-    // Only proceed if we have required data and this effect is still active
-    if (!temporaryEmailId || !user || !isActiveRef.current) {
+    // Early return if no data needed
+    if (!temporaryEmailId || !user) {
+      console.log('No temporaryEmailId or user, setting loading to false');
       setLoading(false);
       return;
     }
 
-    console.log('Setting up new subscription for email ID:', temporaryEmailId);
-
     // Fetch initial emails
     fetchEmails();
 
-    // Create channel with timestamp for uniqueness
+    // Create a new subscription with a unique identifier
     const timestamp = Date.now();
-    const channelName = `emails-${temporaryEmailId}-${timestamp}`;
+    const randomId = Math.random().toString(36).substring(2, 15);
+    const channelName = `emails_${temporaryEmailId}_${timestamp}_${randomId}`;
     
-    console.log('Creating channel:', channelName);
+    console.log('Creating new channel:', channelName);
     
-    const channel = supabase
-      .channel(channelName)
+    // Create the channel but don't subscribe yet
+    const channel = supabase.channel(channelName);
+    
+    // Set up the subscription object
+    subscriptionRef.current = { channel, isSubscribed: false };
+    
+    // Configure the channel
+    channel
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -166,25 +172,24 @@ export const useEmails = (temporaryEmailId?: string) => {
         filter: `temporary_email_id=eq.${temporaryEmailId}`
       }, (payload) => {
         console.log('Email change detected:', payload);
-        // Only fetch if this effect is still active
-        if (isActiveRef.current) {
+        // Only refetch if this subscription is still active
+        if (subscriptionRef.current?.channel === channel) {
           fetchEmails();
         }
       })
       .subscribe((status) => {
-        console.log('Channel subscription status:', status);
+        console.log('Channel subscription status:', status, 'for channel:', channelName);
+        if (subscriptionRef.current?.channel === channel) {
+          subscriptionRef.current.isSubscribed = status === 'SUBSCRIBED';
+        }
       });
-
-    channelRef.current = channel;
 
     // Cleanup function
     return () => {
-      console.log('Cleaning up useEmails effect');
-      isActiveRef.current = false;
-      
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
+      console.log('Cleaning up useEmails subscription');
+      if (subscriptionRef.current?.channel === channel) {
+        supabase.removeChannel(channel);
+        subscriptionRef.current = null;
       }
     };
   }, [temporaryEmailId, user]);
