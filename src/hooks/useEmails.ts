@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
@@ -48,7 +47,7 @@ export const useEmails = (temporaryEmailId?: string) => {
       // Type cast the data to match our Email interface
       const typedEmails: Email[] = (data || []).map(email => ({
         ...email,
-        email_type: email.email_type as 'received' | 'sent',
+        email_type: (email.email_type === 'sent' ? 'sent' : 'received') as 'received' | 'sent',
         attachments: Array.isArray(email.attachments) ? email.attachments : []
       }));
       
