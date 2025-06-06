@@ -1,50 +1,64 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/Header';
 import { EmailGenerator } from '@/components/EmailGenerator';
 import { EmailInbox } from '@/components/EmailInbox';
 import { ComposeEmail } from '@/components/ComposeEmail';
 import { EmailStats } from '@/components/EmailStats';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+import { useTempEmails } from '@/hooks/useTempEmails';
 
 const Index = () => {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('generator');
-  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
-  const [emails, setEmails] = useState([
-    {
-      id: 1,
-      from: 'notifications@github.com',
-      subject: 'Your GitHub Activity Summary',
-      preview: 'Here is your weekly activity summary for your repositories...',
-      timestamp: '2 minutes ago',
-      read: false
-    },
-    {
-      id: 2,
-      from: 'no-reply@stripe.com',
-      subject: 'Payment Confirmation',
-      preview: 'Thank you for your payment. Your transaction has been processed...',
-      timestamp: '1 hour ago',
-      read: true
-    },
-    {
-      id: 3,
-      from: 'team@vercel.com',
-      subject: 'Deployment Successful',
-      preview: 'Your deployment has been successfully completed and is now live...',
-      timestamp: '3 hours ago',
-      read: false
-    }
-  ]);
+  const [selectedTempEmail, setSelectedTempEmail] = useState<string | null>(null);
+  const { tempEmails } = useTempEmails();
 
-  const handleEmailGenerated = (email: string) => {
-    setCurrentEmail(email);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+        <Header />
+        
+        <main className="container mx-auto px-4 py-8">
+          <div className="text-center mb-12">
+            <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
+              Temporary Email Hub
+            </h1>
+            <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-8">
+              Generate secure, temporary email addresses instantly. Receive emails, send messages, and protect your privacy online.
+            </p>
+            <Button 
+              onClick={() => navigate('/auth')}
+              size="lg"
+              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+            >
+              Get Started
+            </Button>
+          </div>
+
+          <EmailStats />
+        </main>
+      </div>
+    );
+  }
+
+  const handleEmailGenerated = (tempEmailId: string) => {
+    setSelectedTempEmail(tempEmailId);
     setActiveTab('inbox');
-  };
-
-  const markAsRead = (emailId: number) => {
-    setEmails(emails.map(email => 
-      email.id === emailId ? { ...email, read: true } : email
-    ));
   };
 
   return (
@@ -52,17 +66,15 @@ const Index = () => {
       <Header />
       
       <main className="container mx-auto px-4 py-8">
-        {/* Hero Section */}
-        <div className="text-center mb-12">
+        <div className="text-center mb-8">
           <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
-            Temporary Email Hub
+            Welcome back!
           </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Generate secure, temporary email addresses instantly. Receive emails, send messages, and protect your privacy online.
+          <p className="text-xl text-gray-600">
+            Manage your temporary emails
           </p>
         </div>
 
-        {/* Stats */}
         <EmailStats />
 
         {/* Navigation Tabs */}
@@ -85,13 +97,9 @@ const Index = () => {
                   ? 'bg-blue-500 text-white shadow-md'
                   : 'text-gray-600 hover:text-blue-500'
               }`}
-              disabled={!currentEmail}
+              disabled={!selectedTempEmail}
             >
-              Inbox {emails.filter(e => !e.read).length > 0 && (
-                <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                  {emails.filter(e => !e.read).length}
-                </span>
-              )}
+              Inbox
             </button>
             <button
               onClick={() => setActiveTab('compose')}
@@ -100,7 +108,7 @@ const Index = () => {
                   ? 'bg-blue-500 text-white shadow-md'
                   : 'text-gray-600 hover:text-blue-500'
               }`}
-              disabled={!currentEmail}
+              disabled={!selectedTempEmail}
             >
               Compose
             </button>
@@ -113,16 +121,12 @@ const Index = () => {
             <EmailGenerator onEmailGenerated={handleEmailGenerated} />
           )}
           
-          {activeTab === 'inbox' && currentEmail && (
-            <EmailInbox 
-              currentEmail={currentEmail} 
-              emails={emails}
-              onMarkAsRead={markAsRead}
-            />
+          {activeTab === 'inbox' && selectedTempEmail && (
+            <EmailInbox tempEmailId={selectedTempEmail} />
           )}
           
-          {activeTab === 'compose' && currentEmail && (
-            <ComposeEmail currentEmail={currentEmail} />
+          {activeTab === 'compose' && selectedTempEmail && (
+            <ComposeEmail tempEmailId={selectedTempEmail} />
           )}
         </div>
       </main>

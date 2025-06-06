@@ -1,71 +1,78 @@
 
-import React, { useState } from 'react';
-import { Mail, Trash, MailOpen } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mail, Trash, MailOpen, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
-interface Email {
-  id: number;
-  from: string;
-  subject: string;
-  preview: string;
-  timestamp: string;
-  read: boolean;
-}
+import { useEmails } from '@/hooks/useTempEmails';
+import { useTempEmails } from '@/hooks/useTempEmails';
+import { supabase } from '@/integrations/supabase/client';
 
 interface EmailInboxProps {
-  currentEmail: string;
-  emails: Email[];
-  onMarkAsRead: (emailId: number) => void;
+  tempEmailId: string;
 }
 
-export const EmailInbox: React.FC<EmailInboxProps> = ({ 
-  currentEmail, 
-  emails, 
-  onMarkAsRead 
-}) => {
-  const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+export const EmailInbox: React.FC<EmailInboxProps> = ({ tempEmailId }) => {
+  const { emails, emailsLoading, markAsRead } = useEmails(tempEmailId);
+  const { tempEmails } = useTempEmails();
+  const [selectedEmail, setSelectedEmail] = useState<any>(null);
 
-  const handleEmailClick = (email: Email) => {
+  const currentTempEmail = tempEmails.find(e => e.id === tempEmailId);
+
+  // Set up realtime subscription for new emails
+  useEffect(() => {
+    const channel = supabase
+      .channel('emails-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'emails',
+          filter: `temporary_email_id=eq.${tempEmailId}`,
+        },
+        () => {
+          // Refetch emails when new ones arrive
+          console.log('New email received!');
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tempEmailId]);
+
+  const handleEmailClick = (email: any) => {
     setSelectedEmail(email);
-    if (!email.read) {
-      onMarkAsRead(email.id);
+    if (!email.is_read) {
+      markAsRead(email.id);
     }
   };
 
-  const mockEmailContent = {
-    body: `Dear User,
+  const unreadCount = emails.filter(e => !e.is_read).length;
 
-This is a sample email content that would be displayed when viewing the full email. In a real implementation, this would contain the actual email body content received from the email server.
-
-The email might include:
-- Rich text formatting
-- Images and attachments
-- Links and buttons
-- Structured content
-
-Best regards,
-The Sender`,
-    attachments: []
-  };
+  if (emailsLoading) {
+    return (
+      <div className="bg-white rounded-2xl shadow-xl border p-8">
+        <div className="flex items-center justify-center">
+          <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-2xl shadow-xl border overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6">
         <h2 className="text-2xl font-bold mb-2">Inbox</h2>
-        <p className="opacity-90">{currentEmail}</p>
+        <p className="opacity-90">{currentTempEmail?.email_address}</p>
         <div className="mt-4 flex items-center justify-between">
           <span className="text-sm opacity-75">
-            {emails.length} emails • {emails.filter(e => !e.read).length} unread
+            {emails.length} emails • {unreadCount} unread
           </span>
-          <Button 
-            variant="secondary" 
-            size="sm"
-            className="bg-white/20 hover:bg-white/30 text-white border-white/30"
-          >
-            <Mail className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="text-sm opacity-75">
+            Expires: {currentTempEmail && new Date(currentTempEmail.expires_at).toLocaleString()}
+          </div>
         </div>
       </div>
 
@@ -88,23 +95,27 @@ The Sender`,
                     selectedEmail?.id === email.id
                       ? 'bg-blue-50 border-blue-200'
                       : 'hover:bg-gray-100'
-                  } ${!email.read ? 'font-semibold bg-blue-25' : ''}`}
+                  } ${!email.is_read ? 'font-semibold bg-blue-25' : ''}`}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <span className="text-sm font-medium text-gray-900 truncate flex-1">
-                      {email.from}
+                      {email.from_address}
                     </span>
-                    <span className="text-xs text-gray-500 ml-2">{email.timestamp}</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      {new Date(email.received_at).toLocaleDateString()}
+                    </span>
                   </div>
                   <div className="flex items-center mb-1">
-                    {!email.read && (
+                    {!email.is_read && (
                       <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
                     )}
                     <h3 className="text-sm font-medium text-gray-900 truncate">
-                      {email.subject}
+                      {email.subject || 'No Subject'}
                     </h3>
                   </div>
-                  <p className="text-xs text-gray-600 truncate">{email.preview}</p>
+                  <p className="text-xs text-gray-600 truncate">
+                    {email.body_text?.substring(0, 100) || 'No preview available'}
+                  </p>
                 </div>
               ))}
             </div>
@@ -120,12 +131,12 @@ The Sender`,
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                      {selectedEmail.subject}
+                      {selectedEmail.subject || 'No Subject'}
                     </h3>
                     <div className="text-sm text-gray-600">
-                      <p><strong>From:</strong> {selectedEmail.from}</p>
-                      <p><strong>To:</strong> {currentEmail}</p>
-                      <p><strong>Date:</strong> {selectedEmail.timestamp}</p>
+                      <p><strong>From:</strong> {selectedEmail.from_address}</p>
+                      <p><strong>To:</strong> {selectedEmail.to_address}</p>
+                      <p><strong>Date:</strong> {new Date(selectedEmail.received_at).toLocaleString()}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -142,9 +153,13 @@ The Sender`,
               {/* Email Body */}
               <div className="flex-1 p-6 overflow-y-auto">
                 <div className="prose max-w-none">
-                  <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed">
-                    {mockEmailContent.body}
-                  </pre>
+                  {selectedEmail.body_html ? (
+                    <div dangerouslySetInnerHTML={{ __html: selectedEmail.body_html }} />
+                  ) : (
+                    <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed">
+                      {selectedEmail.body_text || 'No content available'}
+                    </pre>
+                  )}
                 </div>
               </div>
             </div>

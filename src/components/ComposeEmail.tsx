@@ -4,33 +4,43 @@ import { Send, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useEmails } from '@/hooks/useTempEmails';
+import { useTempEmails } from '@/hooks/useTempEmails';
 
 interface ComposeEmailProps {
-  currentEmail: string;
+  tempEmailId: string;
 }
 
-export const ComposeEmail: React.FC<ComposeEmailProps> = ({ currentEmail }) => {
+export const ComposeEmail: React.FC<ComposeEmailProps> = ({ tempEmailId }) => {
+  const { tempEmails } = useTempEmails();
+  const { sendEmail, isSending } = useEmails(tempEmailId);
   const [formData, setFormData] = useState({
     to: '',
     subject: '',
     body: ''
   });
-  const [isSending, setIsSending] = useState(false);
   const [sent, setSent] = useState(false);
+
+  const currentTempEmail = tempEmails.find(e => e.id === tempEmailId);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSending(true);
+    
+    if (!currentTempEmail) return;
 
-    // Simulate sending email
+    sendEmail({
+      tempEmailId,
+      to: formData.to,
+      subject: formData.subject,
+      body: formData.body,
+      from: currentTempEmail.email_address,
+    });
+
+    setSent(true);
     setTimeout(() => {
-      setIsSending(false);
-      setSent(true);
-      setTimeout(() => {
-        setSent(false);
-        setFormData({ to: '', subject: '', body: '' });
-      }, 3000);
-    }, 2000);
+      setSent(false);
+      setFormData({ to: '', subject: '', body: '' });
+    }, 3000);
   };
 
   const handleChange = (field: string, value: string) => {
@@ -44,7 +54,7 @@ export const ComposeEmail: React.FC<ComposeEmailProps> = ({ currentEmail }) => {
           <Mail className="h-8 w-8 text-green-600" />
         </div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Email Sent Successfully!</h2>
-        <p className="text-gray-600">Your email has been delivered from {currentEmail}</p>
+        <p className="text-gray-600">Your email has been delivered from {currentTempEmail?.email_address}</p>
       </div>
     );
   }
@@ -54,7 +64,7 @@ export const ComposeEmail: React.FC<ComposeEmailProps> = ({ currentEmail }) => {
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-500 to-pink-600 text-white p-6">
         <h2 className="text-2xl font-bold mb-2">Compose Email</h2>
-        <p className="opacity-90">Sending from: {currentEmail}</p>
+        <p className="opacity-90">Sending from: {currentTempEmail?.email_address}</p>
       </div>
 
       {/* Form */}
