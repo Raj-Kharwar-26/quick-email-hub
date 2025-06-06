@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
-import { Send, Mail } from 'lucide-react';
+import { Send, Mail, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useEmails } from '@/hooks/useTempEmails';
 import { useTempEmails } from '@/hooks/useTempEmails';
 
@@ -55,6 +56,12 @@ export const ComposeEmail: React.FC<ComposeEmailProps> = ({ tempEmailId }) => {
         </div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Email Sent Successfully!</h2>
         <p className="text-gray-600">Your email has been delivered from {currentTempEmail?.email_address}</p>
+        <Alert className="mt-4 border-blue-200 bg-blue-50">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Note: This is a demonstration. In a production environment, this would integrate with a real SMTP service to send actual emails.
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -64,7 +71,18 @@ export const ComposeEmail: React.FC<ComposeEmailProps> = ({ tempEmailId }) => {
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-500 to-pink-600 text-white p-6">
         <h2 className="text-2xl font-bold mb-2">Compose Email</h2>
-        <p className="opacity-90">Sending from: {currentTempEmail?.email_address}</p>
+        <p className="opacity-90 font-mono">Sending from: {currentTempEmail?.email_address}</p>
+      </div>
+
+      {/* Demo Notice */}
+      <div className="p-4 bg-yellow-50 border-b border-yellow-200">
+        <Alert className="border-yellow-300 bg-yellow-50">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Demo Mode:</strong> Emails are simulated for demonstration purposes. 
+            In production, this would connect to a real SMTP service to send actual emails.
+          </AlertDescription>
+        </Alert>
       </div>
 
       {/* Form */}

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Mail, Copy, RefreshCw } from 'lucide-react';
+import { Mail, Copy, RefreshCw, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,7 +15,7 @@ export const EmailGenerator: React.FC<EmailGeneratorProps> = ({ onEmailGenerated
   const [selectedDomain, setSelectedDomain] = useState('');
   const [copied, setCopied] = useState(false);
   
-  const { tempEmails, domains, createTempEmail, isCreating } = useTempEmails();
+  const { tempEmails, domains, createTempEmail, isCreating, simulateEmail, isSimulating } = useTempEmails();
 
   const generateRandomUsername = () => {
     const adjectives = ['quick', 'temp', 'fast', 'secure', 'anon', 'private'];
@@ -41,7 +41,9 @@ export const EmailGenerator: React.FC<EmailGeneratorProps> = ({ onEmailGenerated
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const latestEmail = tempEmails[0];
+  const handleSimulateEmail = (emailAddress: string) => {
+    simulateEmail(emailAddress);
+  };
 
   return (
     <div className="space-y-6">
@@ -151,6 +153,22 @@ export const EmailGenerator: React.FC<EmailGeneratorProps> = ({ onEmailGenerated
                     </div>
                   </div>
                   <div className="flex space-x-2">
+                    <Button
+                      onClick={() => handleSimulateEmail(email.email_address)}
+                      disabled={isSimulating}
+                      variant="outline"
+                      size="sm"
+                      className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                    >
+                      {isSimulating ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Zap className="h-4 w-4 mr-1" />
+                          Test Email
+                        </>
+                      )}
+                    </Button>
                     <Button
                       onClick={() => copyToClipboard(email.email_address)}
                       variant="outline"

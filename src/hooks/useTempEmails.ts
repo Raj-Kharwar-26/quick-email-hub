@@ -24,6 +24,8 @@ export interface Email {
   is_read: boolean;
   received_at: string;
   temporary_email_id: string;
+  email_type: string;
+  is_sent: boolean;
 }
 
 export const useTempEmails = () => {
@@ -103,12 +105,40 @@ export const useTempEmails = () => {
     },
   });
 
+  // Simulate incoming email for testing
+  const simulateEmailMutation = useMutation({
+    mutationFn: async (tempEmailAddress: string) => {
+      const { data, error } = await supabase.functions.invoke('simulate-incoming-email', {
+        body: { tempEmailAddress }
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emails'] });
+      toast({
+        title: "Test Email Received",
+        description: "A simulated email has been added to your inbox!",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: "Failed to simulate incoming email",
+        variant: "destructive",
+      });
+    },
+  });
+
   return {
     tempEmails,
     tempEmailsLoading,
     domains,
     createTempEmail: createTempEmailMutation.mutate,
     isCreating: createTempEmailMutation.isPending,
+    simulateEmail: simulateEmailMutation.mutate,
+    isSimulating: simulateEmailMutation.isPending,
   };
 };
 
@@ -117,7 +147,7 @@ export const useEmails = (tempEmailId?: string) => {
   const queryClient = useQueryClient();
 
   // Fetch emails for a specific temporary email
-  const { data: emails = [], isLoading: emailsLoading } = useQuery({
+  const { data: emails = [], isLoading: emailsLoading, refetch } = useQuery({
     queryKey: ['emails', tempEmailId],
     queryFn: async () => {
       if (!tempEmailId) return [];
@@ -132,7 +162,54 @@ export const useEmails = (tempEmailId?: string) => {
       return data as Email[];
     },
     enabled: !!tempEmailId,
+    refetchInterval: 5000, // Refetch every 5 seconds for demo purposes
   });
+
+  // Set up real-time subscription for new emails
+  useEffect(() => {
+    if (!tempEmailId) return;
+
+    console.log('Setting up realtime subscription for emails:', tempEmailId);
+
+    const channel = supabase
+      .channel(`emails-${tempEmailId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'emails',
+          filter: `temporary_email_id=eq.${tempEmailId}`,
+        },
+        (payload) => {
+          console.log('New email received via realtime:', payload);
+          queryClient.invalidateQueries({ queryKey: ['emails', tempEmailId] });
+          toast({
+            title: "New Email Received!",
+            description: `From: ${payload.new.from_address}`,
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'emails',
+          filter: `temporary_email_id=eq.${tempEmailId}`,
+        },
+        (payload) => {
+          console.log('Email updated via realtime:', payload);
+          queryClient.invalidateQueries({ queryKey: ['emails', tempEmailId] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('Cleaning up realtime subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [tempEmailId, queryClient, toast]);
 
   // Mark email as read mutation
   const markAsReadMutation = useMutation({
@@ -149,7 +226,7 @@ export const useEmails = (tempEmailId?: string) => {
     },
   });
 
-  // Send email mutation
+  // Send email mutation using edge function
   const sendEmailMutation = useMutation({
     mutationFn: async ({
       tempEmailId,
@@ -164,19 +241,9 @@ export const useEmails = (tempEmailId?: string) => {
       body: string;
       from: string;
     }) => {
-      const { data, error } = await supabase
-        .from('emails')
-        .insert({
-          temporary_email_id: tempEmailId,
-          from_address: from,
-          to_address: to,
-          subject,
-          body_text: body,
-          email_type: 'sent',
-          is_sent: true,
-        })
-        .select()
-        .single();
+      const { data, error } = await supabase.functions.invoke('send-email', {
+        body: { tempEmailId, to, subject, body, from }
+      });
 
       if (error) throw error;
       return data;
@@ -203,5 +270,6 @@ export const useEmails = (tempEmailId?: string) => {
     markAsRead: markAsReadMutation.mutate,
     sendEmail: sendEmailMutation.mutate,
     isSending: sendEmailMutation.isPending,
+    refetchEmails: refetch,
   };
 };
